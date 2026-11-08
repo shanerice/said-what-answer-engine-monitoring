@@ -1,0 +1,76 @@
+import { defineAction } from "@agent-native/core/action";
+import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
+
+import { getDb, schema } from "../server/db/index.js";
+import { ENGINES } from "../server/lib/engines.js";
+import { requireBrand } from "../server/lib/said-what.js";
+
+const RANK: Record<string, number> = { contradiction: 4, outdated: 3, unsupported: 2, omission: 1 };
+
+export default defineAction({
+  description:
+    "Answer Monitor matrix for a brand: each question x engine cell with the latest answer's worst open verdict, plus counts of findings by status.",
+  schema: z.object({ brandId: z.string().describe("Brand id") }),
+  http: { method: "GET" },
+  readOnly: true,
+  run: async ({ brandId }, ctx) => {
+    const brand = await requireBrand(brandId, ctx);
+    const db = getDb();
+    const p = schema.prompts;
+    const pr = schema.probes;
+    const fi = schema.findings;
+    const [prompts, probes, findings] = await Promise.all([
+      db.select({ id: p.id, text: p.text, intent: p.intent }).from(p).where(and(eq(p.brandId, brand.id), eq(p.active, 1))).limit(30),
+      db
+        .select({ id: pr.id, promptId: pr.promptId, engine: pr.engine, runAt: pr.runAt, judgedAt: pr.judgedAt })
+        .from(pr)
+        .where(eq(pr.brandId, brand.id))
+        .orderBy(desc(pr.runAt))
+        .limit(400),
+      db
+        .select({ id: fi.id, probeId: fi.probeId, verdict: fi.verdict, severity: fi.severity, status: fi.status })
+        .from(fi)
+        .where(eq(fi.brandId, brand.id))
+        .limit(500),
+    ]);
+    const latest = new Map<string, (typeof probes)[number]>();
+    for (const probe of probes) {
+      const key = `${probe.promptId}:${probe.engine}`;
+      if (!latest.has(key)) latest.set(key, probe);
+    }
+    const usedEngines = [...new Set(probes.map((x) => x.engine))];
+    const engines = ENGINES.filter((e) => usedEngines.includes(e.id) || e.available()).map((e) => ({ id: e.id, label: e.label }));
+    const rows = prompts.map((prompt) => ({
+      promptId: prompt.id,
+      question: prompt.text,
+      intent: prompt.intent,
+      cells: engines.map((engine) => {
+        const probe = latest.get(`${prompt.id}:${engine.id}`);
+        if (!probe) return { engine: engine.id, state: "not_asked" as const };
+        const mine = findings.filter((f) => f.probeId === probe.id && f.status !== "dismissed");
+        const worst = mine.sort((a, b) => (RANK[b.verdict] ?? 0) - (RANK[a.verdict] ?? 0))[0];
+        return {
+          engine: engine.id,
+          probeId: probe.id,
+          state: !probe.judgedAt ? ("unjudged" as const) : worst ? ("drift" as const) : ("match" as const),
+          verdict: worst?.verdict ?? null,
+          severity: worst?.severity ?? null,
+          findingId: worst?.id ?? null,
+          findingStatus: worst?.status ?? null,
+          openFindings: mine.length,
+        };
+      }),
+    }));
+    const counts = { new: 0, confirmed: 0, dismissed: 0 } as Record<string, number>;
+    for (const f of findings) counts[f.status] = (counts[f.status] ?? 0) + 1;
+    return {
+      brand: { id: brand.id, name: brand.name },
+      engines,
+      rows,
+      counts,
+      lastRunAt: probes[0]?.runAt ?? null,
+      unjudged: probes.filter((x) => !x.judgedAt).length,
+    };
+  },
+});
