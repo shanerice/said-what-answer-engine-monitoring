@@ -3,7 +3,7 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb, schema } from "../server/db/index.js";
-import { ENGINES, engineById } from "../server/lib/engines.js";
+import { ENGINES, engineById, resolveEngineKeys } from "../server/lib/engines.js";
 import { requireBrand } from "../server/lib/said-what.js";
 
 export default defineAction({
@@ -20,11 +20,12 @@ export default defineAction({
   }),
   run: async (args, ctx) => {
     const brand = await requireBrand(args.brandId, ctx);
+    const keys = await resolveEngineKeys();
     const engines = (args.engines?.length ? args.engines.map((id) => engineById(id)) : ENGINES).filter(
-      (e): e is NonNullable<typeof e> => !!e && e.available(),
+      (e): e is NonNullable<typeof e> => !!e && e.available(keys),
     );
     if (!engines.length)
-      fail("No answer engine has an API key. Add ANTHROPIC_API_KEY (or PERPLEXITY_API_KEY / OPENAI_API_KEY) to .env.", {
+      fail("No answer engine has an API key. Add ANTHROPIC_API_KEY (or PERPLEXITY_API_KEY / OPENAI_API_KEY) in Settings or .env.", {
         errorCode: "no_engines",
       });
     const p = schema.prompts;
@@ -61,7 +62,7 @@ export default defineAction({
           }
         }
         try {
-          const answer = await engine.ask(prompt.text);
+          const answer = await engine.ask(prompt.text, keys);
           await getDb().insert(pr).values({
             id: crypto.randomUUID(),
             brandId: brand.id,

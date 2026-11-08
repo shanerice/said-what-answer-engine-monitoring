@@ -1,3 +1,4 @@
+import "../lib/engines.js";
 import { runMigrations } from "@agent-native/core/db";
 
 const owned = `owner_email TEXT NOT NULL,

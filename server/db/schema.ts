@@ -1,18 +1,14 @@
 import { sql } from "drizzle-orm";
 import { integer, pgTable, text } from "drizzle-orm/pg-core";
 
-const owned = {
-  ownerEmail: text("owner_email").notNull(),
-  orgId: text("org_id"),
-  createdAt: text("created_at").notNull().default(sql`now()`),
-};
-
 export const brands = pgTable("sw_brands", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   domain: text("domain").notNull(),
   category: text("category"),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const sources = pgTable("sw_sources", {
@@ -24,7 +20,9 @@ export const sources = pgTable("sw_sources", {
   fetchedText: text("fetched_text"),
   httpStatus: integer("http_status"),
   fetchedAt: text("fetched_at"),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const facts = pgTable("sw_facts", {
@@ -38,7 +36,9 @@ export const facts = pgTable("sw_facts", {
   severity: text("severity").notNull().default("high"),
   status: text("status").notNull().default("draft"),
   note: text("note"),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const prompts = pgTable("sw_prompts", {
@@ -48,7 +48,9 @@ export const prompts = pgTable("sw_prompts", {
   intent: text("intent").notNull().default("general"),
   factIds: text("fact_ids").notNull().default("[]"),
   active: integer("active").notNull().default(1),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const probes = pgTable("sw_probes", {
@@ -61,7 +63,9 @@ export const probes = pgTable("sw_probes", {
   citedUrls: text("cited_urls").notNull().default("[]"),
   runAt: text("run_at").notNull(),
   judgedAt: text("judged_at"),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const findings = pgTable("sw_findings", {
@@ -76,7 +80,9 @@ export const findings = pgTable("sw_findings", {
   status: text("status").notNull().default("new"),
   reviewerNote: text("reviewer_note"),
   remediationBrief: text("remediation_brief"),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 export const sourceReviews = pgTable("sw_source_reviews", {
@@ -89,5 +95,7 @@ export const sourceReviews = pgTable("sw_source_reviews", {
   carriesWrongClaim: integer("carries_wrong_claim").notNull().default(0),
   evidence: text("evidence").notNull().default("[]"),
   recommendedFix: text("recommended_fix").notNull(),
-  ...owned,
+  ownerEmail: text("owner_email").notNull(),
+  orgId: text("org_id"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });

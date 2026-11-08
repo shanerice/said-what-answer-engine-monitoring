@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb, schema } from "../server/db/index.js";
-import { ENGINES } from "../server/lib/engines.js";
+import { ENGINES, resolveEngineKeys } from "../server/lib/engines.js";
 import { requireBrand } from "../server/lib/said-what.js";
 
 const RANK: Record<string, number> = { contradiction: 4, outdated: 3, unsupported: 2, omission: 1 };
@@ -40,7 +40,8 @@ export default defineAction({
       if (!latest.has(key)) latest.set(key, probe);
     }
     const usedEngines = [...new Set(probes.map((x) => x.engine))];
-    const engines = ENGINES.filter((e) => usedEngines.includes(e.id) || e.available()).map((e) => ({ id: e.id, label: e.label }));
+    const keys = await resolveEngineKeys();
+    const engines = ENGINES.filter((e) => usedEngines.includes(e.id) || e.available(keys)).map((e) => ({ id: e.id, label: e.label }));
     const rows = prompts.map((prompt) => ({
       promptId: prompt.id,
       question: prompt.text,

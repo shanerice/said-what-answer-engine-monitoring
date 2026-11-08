@@ -1,17 +1,69 @@
+import { registerRequiredSecret } from "@agent-native/core/secrets";
+import { prefetchSecrets, resolveSecret } from "@agent-native/core/server";
+
 /**
  * Answer-engine adapters. The engines are the system being monitored, so
  * calling them is a provider read, not the app's own reasoning. Each adapter
  * returns the answer text and the URLs the engine cited.
  */
 export type EngineAnswer = { answerText: string; citedUrls: string[]; model: string };
+type Keys = Partial<Record<"ANTHROPIC_API_KEY" | "PERPLEXITY_API_KEY" | "OPENAI_API_KEY", string>>;
 export type Engine = {
   id: string;
   label: string;
-  available: () => boolean;
-  ask: (question: string) => Promise<EngineAnswer>;
+  available: (keys: Keys) => boolean;
+  ask: (question: string, keys: Keys) => Promise<EngineAnswer>;
 };
 
-const env = (k: string) => process.env[k]?.trim() || undefined;
+const SECRET_KEYS = ["ANTHROPIC_API_KEY", "PERPLEXITY_API_KEY", "OPENAI_API_KEY"] as const;
+type SecretKey = (typeof SECRET_KEYS)[number];
+
+registerRequiredSecret({
+  key: "ANTHROPIC_API_KEY",
+  label: "Anthropic API key",
+  description: "Lets Said What ask Claude (with and without web search) the buyer questions it monitors.",
+  docsUrl: "https://console.anthropic.com/settings/keys",
+  scope: "user",
+  kind: "api-key",
+  required: false,
+});
+registerRequiredSecret({
+  key: "PERPLEXITY_API_KEY",
+  label: "Perplexity API key",
+  description: "Optional. Adds Perplexity Sonar, a citing answer engine, to the monitor.",
+  docsUrl: "https://www.perplexity.ai/settings/api",
+  scope: "user",
+  kind: "api-key",
+  required: false,
+});
+registerRequiredSecret({
+  key: "OPENAI_API_KEY",
+  label: "OpenAI API key",
+  description: "Optional. Adds an OpenAI model (no web) to the monitor.",
+  docsUrl: "https://platform.openai.com/api-keys",
+  scope: "user",
+  kind: "api-key",
+  required: false,
+});
+
+/** Model ids. Edit here to point an engine at a different model. */
+export const MODELS = {
+  claudeWeb: "claude-sonnet-5-5",
+  claudeMemory: "claude-haiku-5-5",
+  perplexity: "sonar",
+  openai: "gpt-4o-mini",
+};
+
+/** Resolve the engine keys for this request (user, org, workspace, then deploy fallback). */
+export async function resolveEngineKeys(): Promise<Partial<Record<SecretKey, string>>> {
+  await prefetchSecrets([...SECRET_KEYS]);
+  const out: Partial<Record<SecretKey, string>> = {};
+  for (const key of SECRET_KEYS) {
+    const value = (await resolveSecret(key))?.trim();
+    if (value) out[key] = value;
+  }
+  return out;
+}
 
 function dedupe(urls: string[]) {
   const seen = new Set<string>();
@@ -44,7 +96,7 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   }
 }
 
-async function anthropic(question: string, model: string, web: boolean): Promise<EngineAnswer> {
+async function anthropic(question: string, model: string, web: boolean, apiKey: string): Promise<EngineAnswer> {
   const body: Record<string, unknown> = {
     model,
     max_tokens: 1200,
@@ -56,7 +108,7 @@ async function anthropic(question: string, model: string, web: boolean): Promise
       "Answer the user's question directly from what you know. Be specific about plans, prices, trials and policies.";
   const data = await postJson(
     "https://api.anthropic.com/v1/messages",
-    { "x-api-key": env("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01" },
+    { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
     body,
   );
   const parts: string[] = [];
@@ -82,24 +134,24 @@ export const ENGINES: Engine[] = [
   {
     id: "claude-web",
     label: "Claude + web search",
-    available: () => !!env("ANTHROPIC_API_KEY"),
-    ask: (q) => anthropic(q, env("SW_WEB_MODEL") ?? "claude-sonnet-5-5", true),
+    available: (k) => !!k.ANTHROPIC_API_KEY,
+    ask: (q, k) => anthropic(q, MODELS.claudeWeb, true, k.ANTHROPIC_API_KEY!),
   },
   {
     id: "claude-memory",
     label: "Claude, no web (training data)",
-    available: () => !!env("ANTHROPIC_API_KEY"),
-    ask: (q) => anthropic(q, env("SW_MEMORY_MODEL") ?? "claude-haiku-5-5", false),
+    available: (k) => !!k.ANTHROPIC_API_KEY,
+    ask: (q, k) => anthropic(q, MODELS.claudeMemory, false, k.ANTHROPIC_API_KEY!),
   },
   {
     id: "perplexity",
     label: "Perplexity Sonar",
-    available: () => !!env("PERPLEXITY_API_KEY"),
-    ask: async (q) => {
-      const model = env("SW_PERPLEXITY_MODEL") ?? "sonar";
+    available: (k) => !!k.PERPLEXITY_API_KEY,
+    ask: async (q, k) => {
+      const model = MODELS.perplexity;
       const data = await postJson(
         "https://api.perplexity.ai/chat/completions",
-        { authorization: `Bearer ${env("PERPLEXITY_API_KEY")}` },
+        { authorization: `Bearer ${k.PERPLEXITY_API_KEY}` },
         { model, messages: [{ role: "user", content: q }] },
       );
       const urls = [
@@ -116,12 +168,12 @@ export const ENGINES: Engine[] = [
   {
     id: "openai",
     label: "OpenAI, no web",
-    available: () => !!env("OPENAI_API_KEY"),
-    ask: async (q) => {
-      const model = env("SW_OPENAI_MODEL") ?? "gpt-4o-mini";
+    available: (k) => !!k.OPENAI_API_KEY,
+    ask: async (q, k) => {
+      const model = MODELS.openai;
       const data = await postJson(
         "https://api.openai.com/v1/chat/completions",
-        { authorization: `Bearer ${env("OPENAI_API_KEY")}` },
+        { authorization: `Bearer ${k.OPENAI_API_KEY}` },
         { model, messages: [{ role: "user", content: q }] },
       );
       return {
