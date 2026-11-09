@@ -1,10 +1,10 @@
 import { actionErrorMessage, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
-import { IconPlayerPlay } from "@tabler/icons-react";
+import { IconLoader2, IconPlayerPlay } from "@tabler/icons-react";
 import { Fragment } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 
-import { AgentButton, askAgent, ENGINE_LABEL, SeverityPill, StatusPill, VerdictPill } from "@/components/said-what/shared";
+import { AgentButton, ENGINE_LABEL, SeverityPill, StatusPill, useBackgroundAgentRun, VerdictPill } from "@/components/said-what/shared";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -31,10 +31,11 @@ export default function MonitorRoute() {
   const findings = useActionQuery("list-findings", { brandId, status: "all" });
   const brandName = data?.brand.name ?? "this brand";
 
+  const judging = useBackgroundAgentRun("Judging finished. The matrix and review queue are updated.");
   const scan = useActionMutation("run-probe", {
     onSuccess: (r) => {
-      toast.success(r.message);
-      if (r.asked > 0) askAgent(judgeMessage(brandName, brandId));
+      toast.success(`Engines answered: ${r.asked} new, ${r.reused} reused. The agent is judging them now.`);
+      if (r.asked > 0) judging.start(judgeMessage(brandName, brandId));
     },
     onError: (e) => toast.error(actionErrorMessage(e) ?? "Scan failed."),
   });
@@ -61,14 +62,25 @@ export default function MonitorRoute() {
             {data?.lastRunAt ? ` · last scan ${new Date(data.lastRunAt).toLocaleString()}` : ""}
           </p>
           <div className="flex gap-2">
-            {data?.unjudged ? (
-              <AgentButton variant="outline" message={judgeMessage(brandName, brandId)}>
-                Judge {data.unjudged} answers
-              </AgentButton>
+            {data?.unjudged && !judging.running ? (
+              <span className="w-48">
+                <AgentButton
+                  variant="outline"
+                  message={judgeMessage(brandName, brandId)}
+                  workingLabel="Agent judging…"
+                  doneLabel="Judging finished. The matrix and review queue are updated."
+                >
+                  Judge {data.unjudged} answers
+                </AgentButton>
+              </span>
             ) : null}
-            <Button size="sm" disabled={!rows.length || scan.isPending} onClick={() => scan.mutate({ brandId, force: false })}>
-              <IconPlayerPlay className="size-4" />
-              {scan.isPending ? "Asking engines…" : "Run scan"}
+            <Button
+              size="sm"
+              disabled={!rows.length || scan.isPending || judging.running}
+              onClick={() => scan.mutate({ brandId, force: false })}
+            >
+              {scan.isPending || judging.running ? <IconLoader2 className="size-4 animate-spin" /> : <IconPlayerPlay className="size-4" />}
+              {scan.isPending ? "Asking engines…" : judging.running ? "Agent judging…" : "Run scan"}
             </Button>
           </div>
         </div>

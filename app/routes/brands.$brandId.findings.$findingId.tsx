@@ -174,11 +174,15 @@ export default function FindingRoute() {
             <p className="text-xs text-muted-foreground">Why is the engine saying this? Which cited pages carry the wrong claim, and what kind of pages are they?</p>
           </div>
           {confirmed ? (
+            <span className="w-56">
             <AgentButton
+              workingLabel="Agent tracing sources…"
+              doneLabel="Source forensics saved."
               message={`Trace the sources behind confirmed finding ${finding.id}. Load the source-forensics skill. For each cited URL (max 8) call inspect-cited-page, classify it using only observed signals, and save all classifications with save-source-reviews. Then write a correction brief with save-remediation and summarize the top fix for me.`}
             >
               {sourceReviews.length ? "Re-trace sources" : "Trace sources"}
             </AgentButton>
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <IconLock className="size-3.5" /> Confirm the finding to unlock

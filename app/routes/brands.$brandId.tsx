@@ -1,4 +1,6 @@
+import { requestAgentChatThreadOpen } from "@agent-native/core/client/agent-chat";
 import { useActionQuery } from "@agent-native/core/client/hooks";
+import { RunsTray } from "@agent-native/toolkit/app/progress";
 import { NavLink, Outlet, useParams } from "react-router";
 
 import { cn } from "@/lib/utils";
@@ -18,6 +20,14 @@ export default function BrandLayout() {
           <div className="truncate text-lg font-semibold tracking-tight">{data?.brand.name ?? "…"}</div>
           <div className="text-xs text-muted-foreground">{data?.brand.domain}</div>
         </div>
+        <div className="flex items-center gap-2">
+        <RunsTray
+          triggerVariant="pill"
+          hideWhenIdle={false}
+          showRecent
+          align="end"
+          onOpenThread={(threadId) => requestAgentChatThreadOpen({ threadId })}
+        />
         <nav className="flex gap-1" aria-label="Brand sections">
           <NavLink end to={`/brands/${brandId}`} className={tab}>
             Ground truth
@@ -26,6 +36,7 @@ export default function BrandLayout() {
             Answer monitor
           </NavLink>
         </nav>
+        </div>
       </header>
       <Outlet />
     </div>

@@ -126,6 +126,8 @@ export default function GroundTruthRoute() {
           <div className="mt-3 flex flex-col gap-2">
             <AgentButton
               disabled={!sources.length}
+              workingLabel="Agent extracting facts…"
+              doneLabel="Fact extraction finished. Review the drafts below."
               message={`Extract GTM facts for ${brandName} (brandId ${brandId}). Load the gtm-fact-taxonomy skill, read every source with get-source, and save drafts with save-facts using verbatim evidence quotes. Then tell me which drafts need my approval, critical ones first.`}
             >
               Extract facts with the agent
@@ -133,6 +135,8 @@ export default function GroundTruthRoute() {
             <AgentButton
               variant="outline"
               disabled={!approved}
+              workingLabel="Agent writing questions…"
+              doneLabel="Questions saved. Open Answer monitor to run a scan."
               message={`Write buyer questions for ${brandName} (brandId ${brandId}) and save them with save-prompts. Load the gtm-fact-taxonomy skill first.
 1. Awareness (4-6): generic category and problem questions a buyer asks before they know any vendor, e.g. "What's the best tool for X?" or "How do I solve Y for my team?". Never name ${brandName}. Infer the category and problems from its sources. stage "awareness", factIds may be empty.
 2. Consideration (8-10): questions that name ${brandName}, each linked to the approved fact ids it tests. Weight trial, pricing, security and product-status facts, and include 2 comparison or "alternatives to ${brandName}" questions. stage "consideration".

@@ -1,13 +1,57 @@
-import { sendToAgentChat } from "@agent-native/core/client/agent-chat";
-import { IconSparkles } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { sendToAgentChat, useAgentChatGenerating } from "@agent-native/core/client/agent-chat";
+import { IconLoader2, IconMessageCircle, IconSparkles } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/** Hand an AI-shaped job to the agent sidebar, in the same thread the user can steer. */
-export function askAgent(message: string) {
-  sendToAgentChat({ message, submit: true, openSidebar: true });
+/**
+ * Hand an AI-shaped job to the agent. By default it runs as a background agent
+ * thread (full agent run with the same actions, tracked in the Runs tray) so the
+ * page keeps focus; pass { visible: true } to run it in the sidebar instead.
+ */
+export function askAgent(message: string, opts: { visible?: boolean } = {}) {
+  if (opts.visible) return sendToAgentChat({ message, submit: true, openSidebar: true });
+  return sendToAgentChat({ message, submit: true, newTab: true, background: true, openSidebar: false });
+}
+
+/** Tracks one background agent run by its tab id; refreshes page data when it ends. */
+export function useBackgroundAgentRun(doneLabel?: string) {
+  const [tabId, setTabId] = useState<string | null>(null);
+  const [generating] = useAgentChatGenerating({ tabId });
+  const sawRunning = useRef(false);
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!tabId) return;
+    if (generating) {
+      sawRunning.current = true;
+      return;
+    }
+    if (!sawRunning.current) return;
+    sawRunning.current = false;
+    setTabId(null);
+    void queryClient.invalidateQueries({ queryKey: ["action"] });
+    if (doneLabel) toast.success(doneLabel, { description: "Open the Runs tray to read the agent's notes." });
+  }, [generating, tabId, queryClient, doneLabel]);
+  // Safety net: never leave a button spinning if the run's end event is missed.
+  useEffect(() => {
+    if (!tabId) return;
+    const timer = setTimeout(() => {
+      setTabId(null);
+      sawRunning.current = false;
+      void queryClient.invalidateQueries({ queryKey: ["action"] });
+    }, 5 * 60_000);
+    return () => clearTimeout(timer);
+  }, [tabId, queryClient]);
+  return {
+    running: !!tabId,
+    start: (message: string) => {
+      sawRunning.current = false;
+      setTabId(askAgent(message));
+    },
+  };
 }
 
 export function AgentButton({
@@ -15,17 +59,41 @@ export function AgentButton({
   message,
   variant = "default",
   disabled,
+  workingLabel = "Agent working…",
+  doneLabel,
 }: {
   children: ReactNode;
   message: string;
   variant?: "default" | "outline" | "secondary";
   disabled?: boolean | undefined;
+  workingLabel?: string;
+  doneLabel?: string;
 }) {
+  const run = useBackgroundAgentRun(doneLabel);
   return (
-    <Button variant={variant} size="sm" disabled={disabled} onClick={() => askAgent(message)}>
-      <IconSparkles className="size-4" />
-      {children}
-    </Button>
+    <span className="inline-flex w-full items-stretch gap-1">
+      <Button
+        variant={variant}
+        size="sm"
+        className="flex-1"
+        disabled={disabled || run.running}
+        onClick={() => run.start(message)}
+      >
+        {run.running ? <IconLoader2 className="size-4 animate-spin" /> : <IconSparkles className="size-4" />}
+        {run.running ? workingLabel : children}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn("px-2", run.running && "invisible")}
+        disabled={disabled}
+        aria-label="Run in the chat sidebar instead"
+        title="Run in the chat sidebar instead"
+        onClick={() => askAgent(message, { visible: true })}
+      >
+        <IconMessageCircle className="size-4" />
+      </Button>
+    </span>
   );
 }
 
