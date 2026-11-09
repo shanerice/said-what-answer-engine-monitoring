@@ -7,7 +7,7 @@ import { parseJsonArray, requireBrand } from "../server/lib/said-what.js";
 
 export default defineAction({
   description:
-    "List stored engine answers for a brand with the question, the cited URLs, and the approved facts each question tests. Use unjudgedOnly to get the answers that still need a drift verdict.",
+    "List stored engine answers for a brand with the question, its funnel stage, cited URLs, and the approved facts to judge against. Awareness answers get all approved facts (the brand may be described anywhere) plus a visibility check. Use unjudgedOnly for answers still needing a verdict.",
   schema: z.object({
     brandId: z.string().describe("Brand id"),
     unjudgedOnly: z.boolean().default(true).describe("Only answers with no verdict yet; defaults to true"),
@@ -22,33 +22,39 @@ export default defineAction({
     const rows = await getDb()
       .select({
         id: pr.id, engine: pr.engine, model: pr.model, answerText: pr.answerText, citedUrls: pr.citedUrls,
-        runAt: pr.runAt, judgedAt: pr.judgedAt, promptId: p.id, question: p.text, factIds: p.factIds,
+        runAt: pr.runAt, judgedAt: pr.judgedAt, promptId: p.id, question: p.text, stage: p.stage, factIds: p.factIds,
       })
       .from(pr)
       .innerJoin(p, eq(p.id, pr.promptId))
       .where(unjudgedOnly ? and(eq(pr.brandId, brand.id), isNull(pr.judgedAt)) : eq(pr.brandId, brand.id))
       .orderBy(desc(pr.runAt))
       .limit(limit);
-    const factIds = [...new Set(rows.flatMap((r) => parseJsonArray(r.factIds)))];
     const f = schema.facts;
-    const facts = factIds.length
-      ? await getDb()
-          .select({ id: f.id, category: f.category, claim: f.claim, canonicalValue: f.canonicalValue, evidenceQuote: f.evidenceQuote, severity: f.severity })
-          .from(f)
-          .where(and(inArray(f.id, factIds), eq(f.status, "approved")))
-      : [];
-    const byId = new Map(facts.map((x) => [x.id, x]));
+    const approved = await getDb()
+      .select({ id: f.id, category: f.category, claim: f.claim, canonicalValue: f.canonicalValue, evidenceQuote: f.evidenceQuote, severity: f.severity })
+      .from(f)
+      .where(and(eq(f.brandId, brand.id), eq(f.status, "approved")))
+      .limit(80);
+    const byId = new Map(approved.map((x) => [x.id, x]));
+    const rank: Record<string, number> = { critical: 0, high: 1, low: 2 };
+    const allFacts = [...approved].sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3)).slice(0, 30);
     return {
-      probes: rows.map((r) => ({
-        id: r.id,
-        engine: r.engine,
-        model: r.model,
-        question: r.question,
-        answerText: r.answerText.slice(0, 4000),
-        citedUrls: parseJsonArray(r.citedUrls),
-        judged: !!r.judgedAt,
-        facts: parseJsonArray(r.factIds).map((id) => byId.get(id)).filter(Boolean),
-      })),
+      brand: { id: brand.id, name: brand.name, domain: brand.domain },
+      probes: rows.map((r) => {
+        const linked = parseJsonArray(r.factIds).map((id) => byId.get(id)).filter(Boolean);
+        return {
+          id: r.id,
+          stage: r.stage,
+          engine: r.engine,
+          model: r.model,
+          question: r.question,
+          answerText: r.answerText.slice(0, 4000),
+          citedUrls: parseJsonArray(r.citedUrls),
+          judged: !!r.judgedAt,
+          needsVisibility: r.stage === "awareness",
+          facts: r.stage === "awareness" && !linked.length ? allFacts : linked,
+        };
+      }),
     };
   },
 });

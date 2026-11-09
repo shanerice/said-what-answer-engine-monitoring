@@ -40,6 +40,14 @@ CREATE INDEX IF NOT EXISTS sw_probes_brand_idx ON sw_probes (brand_id, prompt_id
 CREATE INDEX IF NOT EXISTS sw_findings_brand_idx ON sw_findings (brand_id, status);
 CREATE INDEX IF NOT EXISTS sw_source_reviews_finding_idx ON sw_source_reviews (finding_id)`,
     },
+    {
+      version: 2,
+      name: "said-what-funnel-stage-and-visibility",
+      sql: `ALTER TABLE sw_prompts ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'consideration';
+ALTER TABLE sw_probes ADD COLUMN IF NOT EXISTS brand_mentioned INTEGER;
+ALTER TABLE sw_probes ADD COLUMN IF NOT EXISTS mention_rank INTEGER;
+ALTER TABLE sw_probes ADD COLUMN IF NOT EXISTS competitors TEXT NOT NULL DEFAULT '[]'`,
+    },
   ],
   { table: "said_what_migrations" },
 );

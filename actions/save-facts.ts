@@ -30,8 +30,8 @@ export default defineAction({
         }),
       )
       .min(1)
-      .max(40)
-      .describe("Facts to save, 1-40"),
+      .max(60)
+      .describe("Facts to save, 1-60"),
   }),
   run: async (args, ctx) => {
     const brand = await requireBrand(args.brandId, ctx);
@@ -42,6 +42,15 @@ export default defineAction({
       .from(s)
       .where(and(inArray(s.id, ids), eq(s.brandId, brand.id)));
     const texts = new Map(rows.map((r) => [r.id, normalizeWs(r.text ?? "")]));
+    // Re-running extraction must not duplicate facts: same category + same quote = same fact.
+    const fx = schema.facts;
+    const existing = await getDb()
+      .select({ category: fx.category, quote: fx.evidenceQuote })
+      .from(fx)
+      .where(eq(fx.brandId, brand.id))
+      .limit(1000);
+    const seen = new Set(existing.map((e) => `${e.category}|${normalizeWs(e.quote)}`));
+    let duplicates = 0;
     const rejected: { claim: string; reason: string }[] = [];
     const toInsert = [];
     for (const f of args.facts) {
@@ -54,6 +63,12 @@ export default defineAction({
         rejected.push({ claim: f.claim, reason: "evidenceQuote not found verbatim in source text" });
         continue;
       }
+      const key = `${f.category}|${normalizeWs(f.evidenceQuote)}`;
+      if (seen.has(key)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(key);
       toInsert.push({
         id: crypto.randomUUID(),
         brandId: brand.id,
@@ -69,16 +84,19 @@ export default defineAction({
         orgId: brand.orgId,
       });
     }
-    if (!toInsert.length)
+    if (!toInsert.length && !duplicates)
       fail("No facts saved: every evidence quote failed the verbatim check.", {
         errorCode: "no_valid_facts",
         details: { rejected },
       });
+    if (!toInsert.length)
+      return { saved: 0, duplicates, rejected, message: `All ${duplicates} facts already exist; nothing new saved.` };
     await getDb().insert(schema.facts).values(toInsert);
     return {
       saved: toInsert.length,
+      duplicates,
       rejected,
-      message: `Saved ${toInsert.length} draft facts${rejected.length ? `; rejected ${rejected.length}` : ""}. A human approves them on the Ground Truth screen or via update-fact.`,
+      message: `Saved ${toInsert.length} draft facts${duplicates ? `; skipped ${duplicates} already saved` : ""}${rejected.length ? `; rejected ${rejected.length}` : ""}. A human approves them on the Ground Truth screen or via update-fact.`,
     };
   },
 });

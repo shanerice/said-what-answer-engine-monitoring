@@ -1,5 +1,6 @@
 import { actionErrorMessage, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
 import { IconPlayerPlay } from "@tabler/icons-react";
+import { Fragment } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -16,8 +17,13 @@ const CELL: Record<string, string> = {
 };
 
 function judgeMessage(brandName: string, brandId: string) {
-  return `Judge the unjudged engine answers for ${brandName} (brandId ${brandId}). Load the gtm-fact-taxonomy skill, call list-probes, compare each answer to the approved facts its question tests, and record one verdict per (probe, fact) with save-findings, including matches. Quote the engine verbatim in engineClaim. Then summarize the worst drift for me to review. Do not confirm findings yourself.`;
+  return `Judge the unjudged engine answers for ${brandName} (brandId ${brandId}). Load the gtm-fact-taxonomy skill and call list-probes. For consideration answers, record one verdict per (probe, fact) the question tests, including matches. For awareness answers, record visibility (is ${brandName} mentioned, its rank, which competitors are named) and a verdict only for facts the answer actually states about ${brandName}. Quote the engine verbatim in engineClaim and save everything with save-findings. Then summarize visibility and the worst drift for me to review. Do not confirm findings yourself.`;
 }
+
+const STAGE_COPY: Record<string, { title: string; hint: string }> = {
+  awareness: { title: "Awareness", hint: "Category questions that never name the brand. Does it show up, and where?" },
+  consideration: { title: "Consideration", hint: "Questions that name the brand. Are the facts right?" },
+};
 
 export default function MonitorRoute() {
   const { brandId = "" } = useParams();
@@ -51,6 +57,7 @@ export default function MonitorRoute() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
             {rows.length} questions × {engines.length} engines
+            {data?.visibility.judged ? ` · ${data.brand.name} named in ${data.visibility.mentioned}/${data.visibility.judged} awareness answers` : ""}
             {data?.lastRunAt ? ` · last scan ${new Date(data.lastRunAt).toLocaleString()}` : ""}
           </p>
           <div className="flex gap-2">
@@ -84,14 +91,39 @@ export default function MonitorRoute() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.promptId} className="border-b border-border last:border-0">
+                {rows.map((row, index) => (
+                  <Fragment key={row.promptId}>
+                  {index === 0 || rows[index - 1]?.stage !== row.stage ? (
+                    <tr className="border-b border-border bg-muted/40">
+                      <td colSpan={engines.length + 1} className="px-3 py-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide">{STAGE_COPY[row.stage]?.title ?? row.stage}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{STAGE_COPY[row.stage]?.hint}</span>
+                      </td>
+                    </tr>
+                  ) : null}
+                  <tr className="border-b border-border last:border-0">
                     <td className="p-3 align-top">
                       <span className="block">{row.question}</span>
                       <span className="text-xs text-muted-foreground">{row.intent}</span>
                     </td>
                     {row.cells.map((cell) => (
                       <td key={cell.engine} className="p-2 align-top">
+                        {row.stage === "awareness" && "brandMentioned" in cell && cell.brandMentioned !== null ? (
+                          <div
+                            className={cn(
+                              "mb-1 rounded-md px-2 py-1 text-[11px] font-medium",
+                              cell.brandMentioned
+                                ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+                                : "bg-red-500/12 text-red-700 dark:text-red-300",
+                            )}
+                            title={cell.competitors?.length ? `Also named: ${cell.competitors.join(", ")}` : undefined}
+                          >
+                            {cell.brandMentioned ? `mentioned${cell.mentionRank ? ` · #${cell.mentionRank}` : ""}` : "not mentioned"}
+                            {cell.competitors?.length ? (
+                              <span className="block truncate font-normal text-muted-foreground">vs {cell.competitors.slice(0, 3).join(", ")}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                         {"findingId" in cell && cell.findingId ? (
                           <Link
                             to={`/brands/${brandId}/findings/${cell.findingId}`}
@@ -108,12 +140,19 @@ export default function MonitorRoute() {
                           </Link>
                         ) : (
                           <div className={cn("rounded-lg border p-2 text-[11px] text-muted-foreground", CELL[cell.state])}>
-                            {cell.state === "match" ? "matches ground truth" : cell.state === "unjudged" ? "awaiting judgment" : "not asked"}
+                            {cell.state === "match"
+                              ? row.stage === "awareness"
+                                ? "no wrong claims"
+                                : "matches ground truth"
+                              : cell.state === "unjudged"
+                                ? "awaiting judgment"
+                                : "not asked"}
                           </div>
                         )}
                       </td>
                     ))}
                   </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

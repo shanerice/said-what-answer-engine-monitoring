@@ -33,12 +33,29 @@ scope: both
 
 ## Writing buyer questions (save-prompts)
 
-- 8–12 questions, phrased the way a buyer types into ChatGPT: "Does Acme have a free trial?", "How much is Acme Pro per user?", "Is Acme SOC 2 compliant?", "What are the best alternatives to Acme?".
-- Never put the answer in the question. Link each question to the approved fact ids it tests.
+Two funnel stages, saved in one `save-prompts` call:
+
+**Awareness (4–6).** What a buyer asks before they know any vendor. Never name the brand; `save-prompts` rejects awareness questions that do. Infer the category, the buyer, and their problems from the brand's sources.
+- Category: "What's the best AI writing assistant for a sales team?"
+- Problem: "How can I make my team's emails sound more professional?"
+- Shortlist: "Which grammar checkers are safe to use with confidential company data?"
+- `intent`: `category` or `problem`. `factIds` may be empty.
+
+**Consideration (8–10).** The buyer is evaluating this brand. Name it, and link each question to the approved fact ids it tests.
+- "Does Acme have a free trial?", "How much is Acme Pro per user?", "Is Acme SOC 2 compliant?", "Is Acme still its own company?"
+- Include 2 comparison or "alternatives to Acme" questions.
+- Weight critical categories: trial, pricing, security, product status.
+
+Never put the answer in the question. Phrase questions the way a buyer types into ChatGPT.
 
 ## Judging drift (save-findings)
 
-For each probe from `list-probes`, compare the answer to each linked fact and send one verdict per (probe, fact):
+For each probe from `list-probes`:
+
+- **Consideration:** one verdict per (probe, fact) the question tests, including `match`.
+- **Awareness** (`needsVisibility: true`): one `visibility` entry: `brandMentioned`, `mentionRank` (1-based position among recommended products, if ranked), and `competitors` (other products named, in order). Add verdicts only for facts the answer actually states about the brand. Not mentioning the brand is a visibility result, not an `omission`.
+
+Verdicts:
 
 | Verdict | Use when |
 | --- | --- |

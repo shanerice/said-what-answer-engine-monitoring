@@ -44,8 +44,8 @@ Monitors what answer engines say about a brand's GTM facts. `/brands` lists bran
 | create-brand / list-brands | Brands |
 | ingest-sources / get-source | Fetch and read the brand's own pages |
 | save-facts / list-facts / update-fact | Ground truth (draft → approved) |
-| save-prompts | Buyer questions linked to fact ids |
+| save-prompts | Buyer questions: awareness (no brand name) and consideration (linked fact ids) |
 | run-probe / list-probes | Ask engines; read answers to judge |
-| save-findings / get-monitor / list-findings / get-finding | Drift verdicts and review queue |
+| save-findings / get-monitor / list-findings / get-finding | Drift verdicts, awareness visibility, review queue |
 | review-finding | Human confirm/dismiss |
 | inspect-cited-page / save-source-reviews / save-remediation | Forensics for confirmed findings |
