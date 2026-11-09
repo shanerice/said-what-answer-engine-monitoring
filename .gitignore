@@ -42,3 +42,4 @@ learnings.md
 .agent-native/
 data/*.lock
 .claude/
+.claude/
